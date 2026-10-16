@@ -1,6 +1,6 @@
 # ECC — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 68 specialized agents, 293 skills, 94 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 71 specialized agents, 293 skills, 94 commands, and automated hook workflows for software development.
 
 **Version:** 2.2.3
 
@@ -30,6 +30,9 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 | cpp-build-resolver | C/C++ build errors | C and C++ build failures |
 | fsharp-reviewer | F# functional code review | F# projects |
 | docs-lookup | Documentation lookup via Context7 | API/docs questions |
+| task-router | Cost-aware task classification (quick vs deep) | Before delegating non-trivial work to pick the cheapest suitable model |
+| quick-worker | Low-cost worker (haiku) for simple tasks | Single-file edits, lookups, summaries; escalates when task grows |
+| deep-worker | Stronger worker (sonnet) for complex tasks | Multi-file, architecture, non-obvious debugging, security-sensitive work |
 | go-reviewer | Go code review | Go projects |
 | go-build-resolver | Go build errors | Go build failures |
 | kotlin-reviewer | Kotlin code review | Kotlin/Android/KMP projects |
@@ -200,7 +203,7 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 68 specialized subagents
+agents/          — 71 specialized subagents
 skills/          — 293 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations

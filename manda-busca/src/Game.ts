@@ -15,9 +15,11 @@ import { InputManager } from './core/InputManager';
 import { LineSupply } from './core/LineSupply';
 import { clamp, lerp } from './core/noise';
 import { PlayerController } from './core/PlayerController';
-import { KiteView } from './entities/KiteMeshBuilder';
-import { LineView } from './entities/LineView';
+import { ContactFx } from './entities/ContactFx';
+import { RigView } from './entities/RigView';
+import { CombatWorld } from './physics/CombatWorld';
 import { KiteRig, REEL_RATE, type PilotInput, type RigEnvironment } from './physics/KiteRig';
+import { MIN_POWER, lineResistance, type CombatEvent } from './physics/ReloSystem';
 import { WindField } from './physics/WindField';
 import { DebugStats } from './ui/DebugStats';
 import { HUD } from './ui/HUD';
@@ -72,9 +74,11 @@ export class Game {
     launch: false, desbicada: false, tapaClick: false, qe: 0, payOut: false, quickPull: false, reel: false,
   };
   private readonly env: RigEnvironment;
-  private kiteView: KiteView | null = null;
-  private lineView: LineView | null = null;
-  private handLineView: LineView | null = null;
+  readonly world = new CombatWorld();
+  readonly fx = new ContactFx();
+  private readonly views = new Map<KiteRig, RigView>();
+  private readonly bots = new Map<KiteRig, { name: string; input: PilotInput; anchor: Vector3 }>();
+  private trainingCount = 0;
   private handsInput: HandsInput = { lineSpeed: 0, tension: 0.35, reeling: false, fill: 1 };
   private quickPullTimer = 0;
   private loadingMap = false;
@@ -106,6 +110,7 @@ export class Game {
     this.camera.updateProjectionMatrix();
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);
+    this.scene.add(this.fx.group);
 
     this.input = new InputManager(this.renderer.domElement);
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
@@ -200,31 +205,57 @@ export class Game {
     this.loadingMap = false;
   }
 
-  /** Nova pipa na mao com carretel cheio, mais as vistas da pipa e da linha. */
+  /** Nova pipa na mao com carretel cheio, registrada no combate com a sua vista. */
   private buildRig(): void {
     this.rig = new KiteRig('jogador', new LineSupply(250));
-    this.kiteView = new KiteView(this.rig.spec);
-    this.kiteView.setVisible(false);
-    this.scene.add(this.kiteView.root, this.kiteView.tailGroup);
-    this.lineView = new LineView(0xeeeee6);
-    this.handLineView = new LineView(0xeeeee6);
-    this.scene.add(this.lineView.mesh, this.handLineView.mesh);
+    this.world.add(this.rig);
+    this.views.set(this.rig, new RigView(this.scene, this.rig));
   }
 
   private disposeRig(): void {
-    if (this.kiteView) {
-      this.scene.remove(this.kiteView.root, this.kiteView.tailGroup);
-      this.kiteView.dispose();
-      this.kiteView = null;
-    }
-    for (const v of [this.lineView, this.handLineView]) {
-      if (v) {
-        this.scene.remove(v.mesh);
-        v.dispose();
+    for (const v of this.views.values()) v.dispose();
+    this.views.clear();
+    for (const r of [...this.world.rigs]) this.world.remove(r);
+    this.bots.clear();
+    this.trainingCount = 0;
+  }
+
+  /** Pipa de treino: um adversario parado a favor do vento, ao lado do jogador, para testar o combate. */
+  spawnTraining(): KiteRig {
+    const n = ++this.trainingCount;
+    const rig = new KiteRig(`treino-${n}`, new LineSupply(250));
+    const dir = this.wind.direction;
+    const side = new Vector3(-dir.z, 0, dir.x);
+    const p = this.camera.position;
+    const anchor = new Vector3(p.x + side.x * 7 * (n % 2 ? 1 : -1), p.y - 0.3, p.z + side.z * 7 * (n % 2 ? 1 : -1));
+    const input: PilotInput = { launch: true, desbicada: false, tapaClick: false, qe: 0, payOut: false, quickPull: false, reel: false };
+    this.world.add(rig);
+    this.views.set(rig, new RigView(this.scene, rig, { c1: '#1e88e5', c2: '#43a047' }));
+    this.bots.set(rig, { name: `Pipa de treino ${n}`, input, anchor });
+    return rig;
+  }
+
+  private nameOf(rig: KiteRig | undefined): string {
+    if (!rig) return '?';
+    if (rig === this.rig) return 'Voc\u00ea';
+    return this.bots.get(rig)?.name ?? rig.id;
+  }
+
+  private handleEvents(events: CombatEvent[], now: number): void {
+    for (const e of events) {
+      const who = this.nameOf(e.attacker);
+      const vic = this.nameOf(e.victim);
+      switch (e.type) {
+        case 'cut': this.hud.notify(`${who} \u2702\uFE0F ${vic}`, now); break;
+        case 'bridle-cut': this.hud.notify(`${who} \u2702\uFE0F ${vic} (estirante)`, now); break;
+        case 'tail-cut': this.hud.notify(`${who} cortou a rabiola de ${vic}`, now); break;
+        case 'capture': this.hud.notify(`${who} \u{1FA81} Aparou pipa avoada (${e.hookKind})`, now); break;
+        case 'hook-saw': this.hud.notify(`${who === 'Voc\u00ea' ? 'A avoada' : who} serrou a linha de ${vic}`, now); break;
+        default: break;
       }
+      if (e.point && (e.type === 'cut' || e.type === 'bridle-cut' || e.type === 'tail-cut' || e.type === 'hook-saw')) this.fx.burst(e.point, 40, 6);
+      if (e.point && e.type === 'hook') this.fx.burst(e.point, 12, 2.5);
     }
-    this.lineView = null;
-    this.handLineView = null;
   }
 
   setSky(id: SkyPresetId, instant: boolean): void {
@@ -286,8 +317,17 @@ export class Game {
     // Sem pipa no alto e com R, o carretel e reabastecido ate o limite.
     if (rig.state === 'HAND' && p.reel) rig.supply.takeIn(REEL_RATE * dt);
     this.env.time = this.simTime;
-    rig.update(dt, p, this.anchor, this.env);
+    const events = this.world.step(
+      dt,
+      (r) => {
+        const bot = this.bots.get(r);
+        return bot ? { input: bot.input, anchor: bot.anchor } : { input: p, anchor: this.anchor };
+      },
+      this.env,
+    );
+    for (const bot of this.bots.values()) bot.input.launch = false;
     this.simTime += dt;
+    this.handleEvents(events, this.simTime);
     const lineSpeed = (supplyBefore - rig.supply.remaining) / dt;
 
     if (p.launch || p.desbicada) this.hands.triggerPull();
@@ -307,6 +347,7 @@ export class Game {
       if (this.input.consumePressed(`Digit${i + 1}`)) this.setSky(id, false);
     });
     if (this.input.consumePressed('F3')) this.stats.toggle();
+    if (this.input.consumePressed('KeyT')) this.spawnTraining();
   }
 
   /** Zoom otico: FOV 75 -> 20 e enquadramento travado na pipa no ceu. */
@@ -346,11 +387,14 @@ export class Game {
     this.hands.pinchWorld(this.camera, this.anchor);
 
     const rig = this.rig;
-    const flying = rig.state !== 'HAND';
-    this.kiteView?.setVisible(flying);
-    if (flying) this.kiteView?.update(rig.kite, now);
-    this.lineView?.update(rig.line, this.camera.position, rig.connected ? this.anchor : undefined);
-    this.handLineView?.update(rig.handLine, this.camera.position, this.anchor);
+    for (const [r, v] of this.views) v.update(r, this.camera.position, now, r === rig ? this.anchor : undefined);
+    const reloContact = this.world.relo.contactFor(rig);
+    this.fx.update(
+      frameDt,
+      this.world.relo.contacts.values(),
+      (c) => Math.max(c.a.cutPower, c.b.cutPower) / 25,
+      now,
+    );
 
     const dir = this.wind.direction;
     this.hud.show(this.input.enabled || this.autostart);
@@ -363,7 +407,19 @@ export class Game {
       lineTotalYards: rig.supply.capacityYards,
       state: rig.state,
       connected: rig.connected,
+      captured: rig.capturedKites,
     });
+    const hook = this.world.relo.hookFor(rig);
+    const other = reloContact ? (reloContact.a === rig ? reloContact.b : reloContact.a) : null;
+    this.hud.setCombat(
+      {
+        relo: reloContact && other && Math.max(rig.cutPower, other.cutPower) >= MIN_POWER
+          ? { power: rig.cutPower, enemyPower: other.cutPower, wear: rig.wear, resistance: lineResistance(rig.lineSpec) }
+          : null,
+        hook: hook ? { kind: hook.kind, stress: hook.stress } : null,
+      },
+      this.simTime,
+    );
 
     this.renderer.info.reset();
     this.renderer.clear();
@@ -380,6 +436,7 @@ export class Game {
   dispose(): void {
     this.loop.stop();
     this.disposeRig();
+    this.fx.dispose();
     this.input.dispose();
     this.controls.dispose();
     this.hands.dispose();

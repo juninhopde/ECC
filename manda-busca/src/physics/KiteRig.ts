@@ -81,10 +81,12 @@ export class KiteRig {
   /** Velocidades de linha medidas no ultimo passo (m/s): recolhida e liberada. */
   pullSpeed = 0;
   payOutSpeed = 0;
+  /** Recolhimento pedido pelo piloto (m/s), antes da embreagem: mede a "serrada" na apara. */
+  reelRequest = 0;
   /** Quantas pipas avoadas o piloto ja apanhou (apara). */
   capturedKites = 0;
 
-  private readonly anchor = new Vector3();
+  protected readonly anchor = new Vector3();
   private readonly anchorPrev = new Vector3();
   private anchorReady = false;
   private readonly lineForce = new Vector3();
@@ -170,7 +172,19 @@ export class KiteRig {
 
   /** Poder de corte no relo: velocidade da linha (recolhida + liberada) vezes a abrasividade. */
   get cutPower(): number {
-    return (this.pullSpeed + this.payOutSpeed) * this.lineSpec.abrasion;
+    const slide = Math.max(this.pullSpeed, this.reelRequest * 0.7) + this.payOutSpeed;
+    return slide * this.lineSpec.abrasion;
+  }
+
+  /** Ponto onde a linha sai da mao (ultimo informado). */
+  get anchorPoint(): Vector3 {
+    return this.anchor;
+  }
+
+  /** Captura a pipa avoada (apara concluida): sai do jogo e conta para quem apanhou. */
+  capture(): void {
+    this.state = 'CAPTURED';
+    this.connected = false;
   }
 
   /**
@@ -189,6 +203,7 @@ export class KiteRig {
       this.updateHandLine(dt, input, env);
       return false;
     }
+    this.reelRequest = 0;
     this.runControls(dt, input);
     return true;
   }
@@ -199,6 +214,7 @@ export class KiteRig {
     const knot = this.tmp;
     const time = env.time + (s - 1) * dtS;
     const f = line && (this.connected || this.state === 'AVOADA') ? this.lineForce : null;
+    this.kite.aeroScale = this.connected ? 1 : this.state === 'GROUNDED' ? 0.12 : 0.55;
     this.kite.step(dtS, env.wind, time, f);
     this.collideKite(env);
     if (!line) return;
@@ -256,6 +272,9 @@ export class KiteRig {
       return;
     }
     let delta = 0;
+    // O piloto assumiu a linha: o auxilio de subida termina (senao ele anularia o recolhimento).
+    if (input.reel || input.quickPull || input.payOut || input.desbicada) this.assisting = false;
+    this.reelRequest = (input.quickPull ? QUICK_PULL_RATE : 0) + (input.reel && !input.payOut ? REEL_RATE : 0) + (this.reelBurst > 0 ? 18 : 0);
 
     // Auxilio de subida: 3 desbicadas automaticas iniciais e, depois, uma a cada 1,2 s ate a
     // altitude estavel; a linha so e liberada enquanto firme (tracao alta).

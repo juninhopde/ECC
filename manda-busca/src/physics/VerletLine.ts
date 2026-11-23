@@ -35,6 +35,8 @@ interface Snag {
   y: number;
   z: number;
   slackTicks: number;
+  /** 'cabo' = engate fisico num fio de poste; 'atado' = preso a outra linha (relo e apara). */
+  kind: 'cabo' | 'atado';
 }
 
 export interface LineBreak {
@@ -141,7 +143,8 @@ export class VerletLine {
   }
 
   isSnagged(): boolean {
-    return this.snags.size > 0;
+    for (const s of this.snags.values()) if (s.kind === 'cabo') return true;
+    return false;
   }
 
   /**
@@ -377,6 +380,7 @@ export class VerletLine {
     const lineR = this.spec.diameter / 2;
     // Rompe o engate se a tracao ao redor do no passar do limite; solta se frouxo.
     for (const [node, snag] of this.snags) {
+      if (snag.kind !== 'cabo') continue;
       const tl = node > 0 ? this.tension[node - 1]! : 0;
       const tr = node < this.n - 1 ? this.tension[node]! : 0;
       const t = Math.max(tl, tr);
@@ -408,7 +412,7 @@ export class VerletLine {
         const cx = w.a.x + (w.b.x - w.a.x) * r.t;
         const cy = w.a.y + (w.b.y - w.a.y) * r.t;
         const cz = w.a.z + (w.b.z - w.a.z) * r.t;
-        this.snags.set(node, { x: cx, y: cy + w.radius + lineR, z: cz, slackTicks: 0 });
+        this.snags.set(node, { x: cx, y: cy + w.radius + lineR, z: cz, slackTicks: 0, kind: 'cabo' });
         this.updateMasses();
       }
     }
@@ -474,6 +478,33 @@ export class VerletLine {
     this.updateMasses();
     this.endForce.set(0, 0, 0);
     return right;
+  }
+
+  /**
+   * Prende o no `i` a um ponto movel, dentro do solver (cinematico): usado para atar esta linha a outra
+   * no relo e na apara. Chamar a cada sub-passo com a posicao atual do no lider.
+   */
+  pinNode(i: number, x: number, y: number, z: number): void {
+    const node = Math.min(Math.max(i, 1), this.n - 2);
+    const existing = this.snags.get(node);
+    if (existing) {
+      existing.x = x;
+      existing.y = y;
+      existing.z = z;
+      return;
+    }
+    this.snags.set(node, { x, y, z, slackTicks: 0, kind: 'atado' });
+    this.updateMasses();
+  }
+
+  /** Solta um no preso com pinNode (sem afetar engates em cabos). */
+  unpinNode(i: number): void {
+    const node = Math.min(Math.max(i, 1), this.n - 2);
+    const s = this.snags.get(node);
+    if (s && s.kind === 'atado') {
+      this.snags.delete(node);
+      this.updateMasses();
+    }
   }
 
   /** Total de metros de linha representados (para conservar linha apos cortes). */

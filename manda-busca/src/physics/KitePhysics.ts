@@ -104,6 +104,11 @@ class TailChain {
     this.dragArea = spec.tailRibbonArea;
   }
 
+  /** Descarta as posicoes: na proxima chamada a cadeia pende de novo a partir da base da pipa. */
+  reset(): void {
+    this.ready = false;
+  }
+
   /** Avanca um sub-step; `outForce` recebe a soma das cargas nas fitas (puxa a pipa). */
   step(dt: number, attach: Vector3, windAt: WindFn, time: number, outForce: Vector3, down: Vector3): void {
     const n = this.n;
@@ -179,6 +184,11 @@ export class KiteBody {
   readonly quat = new Quaternion();
   /** Velocidade angular no referencial do corpo (rad/s). */
   readonly omega = new Vector3();
+  /**
+   * Fracao da aerodinamica que vale (1 = pipa inteira em voo). Pipa avoada perde sustentacao
+   * e pipa no chao fica amassada: sem isto ela deslizaria para sempre sob o vento.
+   */
+  aeroScale = 1;
   /** Alvo do angulo no plano (rad): positivo inclina o nariz para a esquerda do jogador. */
   psiTarget = 0;
   tailAttached: boolean;
@@ -230,6 +240,8 @@ export class KiteBody {
     this.quat.setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
     this.omega.set(0, 0, 0);
     this.psiTarget = 0;
+    // Teletransportar a pipa deixaria a rabiola longe da base: ela recomeca pendurada.
+    this.tail?.reset();
   }
 
   knotWorld(out: Vector3): Vector3 {
@@ -301,7 +313,7 @@ export class KiteBody {
       const sgn = d >= 0 ? 1 : -1;
       const sinA = Math.abs(d);
       this.alpha = Math.asin(Math.min(1, sinA));
-      dyn = 0.5 * AIR_DENSITY * speed * speed;
+      dyn = 0.5 * AIR_DENSITY * speed * speed * this.aeroScale;
       const fn = dyn * spec.area * spec.cnMax * sinA;
       const aero = this.tmp.copy(n).multiplyScalar(sgn * fn).addScaledVector(wh, dyn * spec.area * spec.cd0);
       F.add(aero);

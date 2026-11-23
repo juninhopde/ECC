@@ -23,6 +23,9 @@ import {
 import { silkPaperTextures, type KiteOutline } from '../world/ProceduralTextures';
 import type { KiteBody, KiteSpec } from '../physics/KitePhysics';
 
+/** O que o visual le da pipa: pose, e a rabiola se houver (serve ao corpo real e ao fantasma do replay). */
+export type KitePose = Pick<KiteBody, 'pos' | 'quat' | 'tailAttached' | 'tailNode'> & { tail: object | null };
+
 export interface KiteSkin {
   /** Cores dos paineis do papel (CSS). */
   c1: string;
@@ -64,9 +67,12 @@ export class KiteView {
   private readonly tmpE = new Vector3();
   private readonly translucency = { value: 0.55 };
 
-  constructor(spec: KiteSpec, skin: KiteSkin = DEFAULT_SKIN, outline: KiteOutline = DIAMOND_OUTLINE) {
+  private readonly bowY: number;
+
+  constructor(spec: KiteSpec, skin: KiteSkin = DEFAULT_SKIN, outline: KiteOutline = DIAMOND_OUTLINE, bowY: number = BOW_Y) {
     this.spec = spec;
-    const { map, sparMap } = silkPaperTextures(outline, skin.c1, skin.c2, BOW_Y);
+    this.bowY = bowY;
+    const { map, sparMap } = silkPaperTextures(outline, skin.c1, skin.c2, bowY);
     this.textures.push(map, sparMap);
     this.paperMat = new MeshPhysicalMaterial({
       map, roughness: 0.8, metalness: 0, specularIntensity: 0.12, sheen: 0.05, sheenColor: new Color(0xffffff), sheenRoughness: 0.8,
@@ -114,7 +120,7 @@ export class KiteView {
     this.root.add(spine);
     const bow = new Mesh(new CylinderGeometry(0.0045, 0.0045, spec.width * 1.02, 8), this.stickMat);
     bow.rotation.z = Math.PI / 2;
-    bow.position.set(0, spec.height * BOW_Y, -0.006);
+    bow.position.set(0, spec.height * this.bowY, -0.006);
     this.root.add(bow);
 
     // Estirante: pernas da espinha ate o no central, mais o no.
@@ -155,7 +161,7 @@ export class KiteView {
   }
 
   /** Atualiza pose da folha e fitas da rabiola. `time` (s) anima o tremular. */
-  update(body: KiteBody, time: number): void {
+  update(body: KitePose, time: number): void {
     this.root.position.copy(body.pos);
     this.root.quaternion.copy(body.quat);
     const ribbons = this.ribbons;

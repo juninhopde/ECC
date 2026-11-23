@@ -9,6 +9,9 @@ import type { VerletLine } from '../physics/VerletLine';
 const UP = new Vector3(0, 1, 0);
 const CAPACITY = 64;
 
+/** O que o visual le da linha: numero de nos e a posicao de cada um. */
+export type LineSource = Pick<VerletLine, 'n' | 'node'>;
+
 export class LineView {
   readonly mesh: InstancedMesh;
   private readonly material: MeshStandardMaterial;
@@ -33,7 +36,7 @@ export class LineView {
   }
 
   /** `startOverride` substitui o primeiro no (ancora visual no ponto exato da mao). */
-  update(line: VerletLine | null, cameraPos: Vector3, startOverride?: Vector3): void {
+  update(line: LineSource | null, cameraPos: Vector3, startOverride?: Vector3): void {
     if (!line) {
       this.mesh.count = 0;
       return;

@@ -516,11 +516,17 @@ export function createBairroMap(): GameMap {
   }
 
   let houseIndex = 0;
+  let shopPoint: { x: number; z: number; radius: number } | undefined;
   const addRow = (cx: number, cz: number, rot: 0 | 1 | 2 | 3, shop = false): void => {
     const f = new Frame(batch, boxes, cx, cz, rot);
     const slabTop = shop ? 4.0 : [3.0, 3.2, 3.4][Math.floor(rand() * 3)]!;
     addHouse(f, 10, 9, { index: houseIndex, slabTop, shop });
-    if (shop) addShopDetails(f, 10, 9, slabTop);
+    if (shop) {
+      addShopDetails(f, 10, 9, slabTop);
+      // Porta da loja: x local 2.6, na fachada (z = meia profundidade); o ponto fica 2,5 m a frente.
+      const [sx, sz] = f.toWorld(2.6, 4.5 + 2.5);
+      shopPoint = { x: sx, z: sz, radius: 5 };
+    }
     houseIndex++;
   };
   for (let i = 0; i < 10; i++) addRow(-26 + 12 * i, -12, 0, i === 0);
@@ -681,6 +687,7 @@ export function createBairroMap(): GameMap {
     wind: { baseSpeed: 6.7, dirX: 0.99, dirZ: -0.14, turbulence: 1.0, verticalGusts: 0.6 },
     walk,
     wires,
+    shop: shopPoint,
     update: () => undefined,
     setNight: (f: number) => {
       lampMat.emissiveIntensity = f * 4;

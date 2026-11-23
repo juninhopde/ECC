@@ -37,6 +37,8 @@ export interface GameMap {
   readonly walk: WalkWorld;
   /** Cabos de poste (fase 2: colisao e atrito com a linha). */
   readonly wires: WireSegment[];
+  /** Ponto de interacao da loja Valdir Pipas (E abre a loja a ate `radius` metros). */
+  readonly shop?: { x: number; z: number; radius: number };
   /** Atualiza animacoes do cenario (ondas, neblina). */
   update(dt: number, time: number): void;
   /** 0 = dia, 1 = noite completa; acende postes e janelas. */

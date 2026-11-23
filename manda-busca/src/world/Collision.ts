@@ -113,6 +113,11 @@ export class WalkWorld {
     return this.terrainHeight(x, z);
   }
 
+  /** Um piloto pode ficar de pe em (x, z): dentro dos limites, fora de paredes e de areas bloqueadas. */
+  canStand(x: number, z: number): boolean {
+    return !this.blockedAt(x, z, this.terrainHeight(x, z), 0.06);
+  }
+
   /** Altura da rampa em (x, z) ou null se fora da pegada da rampa. */
   rampHeightAt(ramp: Ramp, x: number, z: number): number | null {
     const rx = x - ramp.cx;

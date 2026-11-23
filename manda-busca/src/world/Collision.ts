@@ -58,6 +58,8 @@ export function createPlayerBody(x: number, z: number, y = 0): PlayerBody {
   return { x, y, z, vy: 0, onGround: true };
 }
 
+const CELL = 8;
+
 export class WalkWorld {
   readonly boxes: SurfaceBox[];
   readonly ramps: Ramp[];
@@ -71,6 +73,40 @@ export class WalkWorld {
     this.bounds = config.bounds;
     this.terrainHeight = config.terrainHeight;
     this.extraBlocked = config.isBlocked;
+    this.buildGrid();
+  }
+
+  /** Indice espacial: cada celula guarda as caixas que a tocam (consultas O(1) em media). */
+  private readonly grid = new Map<number, SurfaceBox[]>();
+
+  private static key(ix: number, iz: number): number {
+    return (ix + 4096) * 8192 + (iz + 4096);
+  }
+
+  private buildGrid(): void {
+    for (const b of this.boxes) {
+      const x0 = Math.floor(b.minX / CELL);
+      const x1 = Math.floor(b.maxX / CELL);
+      const z0 = Math.floor(b.minZ / CELL);
+      const z1 = Math.floor(b.maxZ / CELL);
+      for (let ix = x0; ix <= x1; ix++) {
+        for (let iz = z0; iz <= z1; iz++) {
+          const k = WalkWorld.key(ix, iz);
+          let list = this.grid.get(k);
+          if (!list) {
+            list = [];
+            this.grid.set(k, list);
+          }
+          list.push(b);
+        }
+      }
+    }
+  }
+
+  private static readonly EMPTY: SurfaceBox[] = [];
+
+  private cell(x: number, z: number): SurfaceBox[] {
+    return this.grid.get(WalkWorld.key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? WalkWorld.EMPTY;
   }
 
   terrainAt(x: number, z: number): number {
@@ -91,7 +127,7 @@ export class WalkWorld {
   /** Maior superficie em (x, z) que esteja em ou abaixo de `maxY` (terreno sempre conta). */
   surfaceHeightAt(x: number, z: number, maxY: number): number {
     let h = this.terrainHeight(x, z);
-    for (const b of this.boxes) {
+    for (const b of this.cell(x, z)) {
       if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && b.top <= maxY && b.top > h) h = b.top;
     }
     for (const r of this.ramps) {
@@ -108,7 +144,14 @@ export class WalkWorld {
     const slopeAllowance = Math.max(0.06, moveDist * 1.3);
     if (this.terrainHeight(x, z) - y > slopeAllowance) return true;
     const limit = y + STEP_HEIGHT;
-    for (const box of this.boxes) {
+    const seen: SurfaceBox[] = [];
+    for (let ix = Math.floor((x - PLAYER_RADIUS) / CELL); ix <= Math.floor((x + PLAYER_RADIUS) / CELL); ix++) {
+      for (let iz = Math.floor((z - PLAYER_RADIUS) / CELL); iz <= Math.floor((z + PLAYER_RADIUS) / CELL); iz++) {
+        const list = this.grid.get(WalkWorld.key(ix, iz));
+        if (list) for (const b of list) if (!seen.includes(b)) seen.push(b);
+      }
+    }
+    for (const box of seen) {
       if (box.top <= limit) continue;
       const cx = x < box.minX ? box.minX : x > box.maxX ? box.maxX : x;
       const cz = z < box.minZ ? box.minZ : z > box.maxZ ? box.maxZ : z;

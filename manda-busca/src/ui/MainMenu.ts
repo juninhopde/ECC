@@ -63,9 +63,11 @@ export class MainMenu {
     const keys = document.createElement('div');
     keys.className = 'mb-keys';
     keys.innerHTML =
-      '<kbd>W A S D</kbd> mover · <kbd>Mouse</kbd> olhar · <kbd>Botão esquerdo</kbd> / <kbd>Scroll ↓</kbd> puxada · ' +
-      '<kbd>Botão direito</kbd> (segurar) dar linha · <kbd>R</kbd> (segurar) recolher / encher carretel · ' +
-      '<kbd>1 2 3</kbd> céu · <kbd>F3</kbd> estatísticas · <kbd>Esc</kbd> menu';
+      '<kbd>W A S D</kbd> mover \u00b7 <kbd>Mouse</kbd> olhar \u00b7 <kbd>N</kbd> ou <kbd>Clique</kbd> soltar a pipa \u00b7 ' +
+      '<kbd>Clique esquerdo</kbd> desbicada \u00b7 <kbd>Q</kbd> / <kbd>E</kbd> inclinar o nariz \u00b7 ' +
+      '<kbd>Bot\u00e3o direito</kbd> (segurar) dar linha \u00b7 <kbd>Bot\u00e3o direito</kbd> + cliques r\u00e1pidos = tapa \u00b7 ' +
+      '<kbd>Scroll \u2193</kbd> ou <kbd>Shift</kbd> puxada r\u00e1pida \u00b7 <kbd>R</kbd> (segurar) recolher / encher carretel \u00b7 ' +
+      '<kbd>F</kbd> ou <kbd>Ctrl</kbd> zoom \u00f3ptico \u00b7 <kbd>1 2 3</kbd> c\u00e9u \u00b7 <kbd>F3</kbd> estat\u00edsticas \u00b7 <kbd>Esc</kbd> menu';
     card.appendChild(keys);
     this.root.appendChild(card);
     parent.appendChild(this.root);

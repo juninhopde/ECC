@@ -141,14 +141,33 @@ export function buildTerrainMesh(grid: HeightGrid, options: TerrainOptions): Mes
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying vec3 vSplat;\nuniform sampler2D mapB;\nuniform sampler2D mapC;\nuniform sampler2D roughB;\nuniform sampler2D roughC;\nuniform float uTileB;\nuniform float uTileC;',
+        `#include <common>
+        varying vec3 vSplat;
+        uniform sampler2D mapB;
+        uniform sampler2D mapC;
+        uniform sampler2D roughB;
+        uniform sampler2D roughC;
+        uniform float uTileB;
+        uniform float uTileC;
+        float tHash(vec2 p) { p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
+        float tNoise(vec2 p) {
+          vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(tHash(i), tHash(i + vec2(1.0, 0.0)), f.x), mix(tHash(i + vec2(0.0, 1.0)), tHash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+        // Anti-repeticao: mistura a textura com uma copia girada e em outra escala, por ruido de baixa frequencia.
+        vec4 antiTile(sampler2D t, vec2 uv) {
+          float n = tNoise(uv * 0.09 + 3.7);
+          vec4 a = texture2D(t, uv);
+          vec4 b = texture2D(t, vec2(uv.y, -uv.x) * 0.37 + vec2(0.41, 0.73));
+          return mix(a, b, smoothstep(0.25, 0.75, n));
+        }`,
       )
       .replace(
         '#include <map_fragment>',
         `#ifdef USE_MAP
-          vec4 sA = texture2D( map, vMapUv );
-          vec4 sB = texture2D( mapB, vMapUv * uTileB );
-          vec4 sC = texture2D( mapC, vMapUv * uTileC );
+          vec4 sA = antiTile( map, vMapUv );
+          vec4 sB = antiTile( mapB, vMapUv * uTileB );
+          vec4 sC = antiTile( mapC, vMapUv * uTileC );
           vec4 sampledDiffuseColor = sA * vSplat.x + sB * vSplat.y + sC * vSplat.z;
           diffuseColor *= sampledDiffuseColor;
         #endif`,
@@ -157,9 +176,9 @@ export function buildTerrainMesh(grid: HeightGrid, options: TerrainOptions): Mes
         '#include <roughnessmap_fragment>',
         `float roughnessFactor = roughness;
         #ifdef USE_ROUGHNESSMAP
-          float rA = texture2D( roughnessMap, vRoughnessMapUv ).g;
-          float rB = texture2D( roughB, vRoughnessMapUv * uTileB ).g;
-          float rC = texture2D( roughC, vRoughnessMapUv * uTileC ).g;
+          float rA = antiTile( roughnessMap, vRoughnessMapUv ).g;
+          float rB = antiTile( roughB, vRoughnessMapUv * uTileB ).g;
+          float rC = antiTile( roughC, vRoughnessMapUv * uTileC ).g;
           roughnessFactor *= rA * vSplat.x + rB * vSplat.y + rC * vSplat.z;
         #endif`,
       );

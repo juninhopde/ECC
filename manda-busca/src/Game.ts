@@ -1,8 +1,10 @@
 import {
   ACESFilmicToneMapping,
   Euler,
+  Matrix4,
   PCFShadowMap,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   Vector3,
   WebGLRenderer,
@@ -11,8 +13,14 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { GameLoop } from './core/GameLoop';
 import { InputManager } from './core/InputManager';
 import { LineSupply } from './core/LineSupply';
+import { clamp, lerp } from './core/noise';
 import { PlayerController } from './core/PlayerController';
+import { KiteView } from './entities/KiteMeshBuilder';
+import { LineView } from './entities/LineView';
+import { KiteRig, REEL_RATE, type PilotInput, type RigEnvironment } from './physics/KiteRig';
+import { WindField } from './physics/WindField';
 import { DebugStats } from './ui/DebugStats';
+import { HUD } from './ui/HUD';
 import { MainMenu } from './ui/MainMenu';
 import { FirstPersonHands, type HandsInput, type ReelKind } from './world/FirstPersonHands';
 import type { GameMap, MapId } from './world/GameMap';
@@ -28,34 +36,51 @@ export interface GameOptions {
   autostart: boolean;
 }
 
-const PAY_OUT_SPEED = 2.0;
-const REEL_IN_SPEED = 3.0;
+const BASE_FOV = 75;
+const ZOOM_FOV = 20;
 const NEXT_FRAME = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
 
 export class Game {
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
-  readonly camera = new PerspectiveCamera(75, 16 / 9, 0.05, 5000);
+  readonly camera = new PerspectiveCamera(BASE_FOV, 16 / 9, 0.05, 5000);
   readonly controls: PointerLockControls;
   readonly input: InputManager;
   readonly sky: SkyAtmosphere;
   readonly hands: FirstPersonHands;
   readonly menu: MainMenu;
+  readonly hud: HUD;
   readonly stats: DebugStats;
   readonly loop: GameLoop;
-  supply = new LineSupply(250);
+  readonly wind = new WindField();
   map!: GameMap;
   player!: PlayerController;
+  rig!: KiteRig;
   mapId: MapId;
   skyId: SkyPresetId;
   reelKind: ReelKind;
+  /** Tempo de simulacao (s), avanca so nos passos fixos: o vento depende dele. */
+  simTime = 0;
+  zoomT = 0;
 
   private readonly container: HTMLElement;
   private readonly autostart: boolean;
   private readonly focus = new Vector3();
   private readonly euler = new Euler(0, 0, 0, 'YXZ');
+  private readonly anchor = new Vector3();
+  private readonly pilot: PilotInput = {
+    launch: false, desbicada: false, tapaClick: false, qe: 0, payOut: false, quickPull: false, reel: false,
+  };
+  private readonly env: RigEnvironment;
+  private kiteView: KiteView | null = null;
+  private lineView: LineView | null = null;
+  private handLineView: LineView | null = null;
   private handsInput: HandsInput = { lineSpeed: 0, tension: 0.35, reeling: false, fill: 1 };
+  private quickPullTimer = 0;
   private loadingMap = false;
+  private readonly lookMatrix = new Matrix4();
+  private readonly lookQuat = new Quaternion();
+  private readonly up = new Vector3(0, 1, 0);
 
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
@@ -99,7 +124,9 @@ export class Game {
     this.sky = new SkyAtmosphere(this.scene, this.renderer, options.sky);
     this.hands = new FirstPersonHands(this.camera.aspect);
     this.hands.setReel(options.reel);
+    this.hands.setSkyLineVisible(false);
     this.stats = new DebugStats(container);
+    this.hud = new HUD(container);
 
     this.menu = new MainMenu(container, {
       onPlay: () => this.play(),
@@ -111,11 +138,22 @@ export class Game {
     this.menu.setActive('sky', this.skyId);
     this.menu.setActive('reel', this.reelKind);
 
+    this.env = {
+      wind: this.wind.sample,
+      time: 0,
+      groundHeight: (x, z) => (this.map ? this.map.walk.surfaceHeightAt(x, z, 1e9) : 0),
+      wires: [],
+    };
+
     this.loop = new GameLoop({
       fixedUpdate: (dt) => this.fixedUpdate(dt),
       render: (alpha, frameDt, now) => this.render(alpha, frameDt, now),
     });
     window.addEventListener('resize', () => this.resize());
+  }
+
+  get supply(): LineSupply {
+    return this.rig.supply;
   }
 
   async start(): Promise<void> {
@@ -142,6 +180,7 @@ export class Game {
     this.menu.setLoading(true);
     await NEXT_FRAME();
     await new Promise((r) => setTimeout(r, 30));
+    this.disposeRig();
     if (this.map) {
       this.scene.remove(this.map.root);
       this.map.dispose();
@@ -149,12 +188,43 @@ export class Game {
     this.mapId = id;
     this.map = createMap(id);
     this.scene.add(this.map.root);
+    this.wind.setProfile(this.map.wind);
+    this.env.wires = this.map.wires;
     this.player = new PlayerController(this.map.walk, this.map.spawn.x, this.map.spawn.z);
     this.camera.rotation.set(0, this.map.spawn.yaw, 0, 'YXZ');
-    this.supply = new LineSupply(250);
+    this.simTime = 0;
+    this.buildRig();
+    this.anchor.set(this.map.spawn.x, this.player.body.y + 1.3, this.map.spawn.z);
     this.menu.setActive('map', id);
     this.menu.setLoading(false);
     this.loadingMap = false;
+  }
+
+  /** Nova pipa na mao com carretel cheio, mais as vistas da pipa e da linha. */
+  private buildRig(): void {
+    this.rig = new KiteRig('jogador', new LineSupply(250));
+    this.kiteView = new KiteView(this.rig.spec);
+    this.kiteView.setVisible(false);
+    this.scene.add(this.kiteView.root, this.kiteView.tailGroup);
+    this.lineView = new LineView(0xeeeee6);
+    this.handLineView = new LineView(0xeeeee6);
+    this.scene.add(this.lineView.mesh, this.handLineView.mesh);
+  }
+
+  private disposeRig(): void {
+    if (this.kiteView) {
+      this.scene.remove(this.kiteView.root, this.kiteView.tailGroup);
+      this.kiteView.dispose();
+      this.kiteView = null;
+    }
+    for (const v of [this.lineView, this.handLineView]) {
+      if (v) {
+        this.scene.remove(v.mesh);
+        v.dispose();
+      }
+    }
+    this.lineView = null;
+    this.handLineView = null;
   }
 
   setSky(id: SkyPresetId, instant: boolean): void {
@@ -183,30 +253,50 @@ export class Game {
     return this.euler.y;
   }
 
+  /** Traduz teclado e mouse nos comandos do piloto. */
+  private readPilot(dt: number): void {
+    const inp = this.input;
+    const inHand = this.rig.state === 'HAND';
+    const lmb = inp.mousePressed(0);
+    const rmb = inp.mouseDown(2);
+    if (inp.consumeWheelDown() > 0) {
+      this.quickPullTimer = 0.35;
+      this.hands.triggerPull();
+    }
+    this.quickPullTimer = Math.max(0, this.quickPullTimer - dt);
+    const shift = inp.isDown('ShiftLeft') || inp.isDown('ShiftRight');
+    const p = this.pilot;
+    p.launch = inp.wasPressed('KeyN') || (lmb && inHand);
+    p.desbicada = lmb && !inHand && !rmb;
+    p.tapaClick = lmb && rmb && !inHand;
+    p.qe = (inp.isDown('KeyQ') ? 1 : 0) - (inp.isDown('KeyE') ? 1 : 0);
+    p.payOut = rmb && !inHand;
+    p.quickPull = !inHand && (shift || this.quickPullTimer > 0);
+    p.reel = inp.isDown('KeyR');
+  }
+
   private fixedUpdate(dt: number): void {
     if (!this.map || this.loadingMap) return;
     this.player.fixedUpdate(dt, this.input, this.currentYaw());
+    this.readPilot(dt);
 
-    const reeling = this.input.isDown('KeyR');
-    const paying = this.input.mouseDown(2) && !reeling;
-    let lineSpeed = 0;
-    if (reeling) {
-      const taken = this.supply.takeIn(REEL_IN_SPEED * dt);
-      lineSpeed = -taken / dt;
-    } else if (paying) {
-      const given = this.supply.payOut(PAY_OUT_SPEED * dt);
-      lineSpeed = given / dt;
-    }
-    if (this.input.mousePressed(0)) {
-      if (this.input.mouseDown(2)) this.hands.triggerTap();
-      else this.hands.triggerPull();
-    }
-    if (this.input.consumeWheelDown() > 0) this.hands.triggerPull();
+    const rig = this.rig;
+    const p = this.pilot;
+    const supplyBefore = rig.supply.remaining;
+    // Sem pipa no alto e com R, o carretel e reabastecido ate o limite.
+    if (rig.state === 'HAND' && p.reel) rig.supply.takeIn(REEL_RATE * dt);
+    this.env.time = this.simTime;
+    rig.update(dt, p, this.anchor, this.env);
+    this.simTime += dt;
+    const lineSpeed = (supplyBefore - rig.supply.remaining) / dt;
+
+    if (p.launch || p.desbicada) this.hands.triggerPull();
+    if (p.tapaClick) this.hands.triggerTap();
     this.handsInput = {
       lineSpeed,
-      tension: paying ? 0.1 : reeling ? 0.8 : 0.35,
-      reeling: reeling && lineSpeed !== 0,
-      fill: this.supply.fill,
+      tension: rig.line ? clamp(rig.tension / 8, 0, 1) : 0.3,
+      reeling: lineSpeed < -0.1,
+      fill: rig.supply.fill,
     };
     this.input.endTick();
   }
@@ -219,10 +309,29 @@ export class Game {
     if (this.input.consumePressed('F3')) this.stats.toggle();
   }
 
+  /** Zoom otico: FOV 75 -> 20 e enquadramento travado na pipa no ceu. */
+  private updateZoom(frameDt: number): void {
+    const held = this.input.isDown('KeyF') || this.input.isDown('ControlLeft') || this.input.isDown('ControlRight');
+    this.zoomT += ((held ? 1 : 0) - this.zoomT) * (1 - Math.exp(-frameDt * 7));
+    if (Math.abs(this.zoomT) < 1e-4) this.zoomT = 0;
+    const fov = lerp(BASE_FOV, ZOOM_FOV, this.zoomT);
+    if (Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.controls.pointerSpeed = fov / BASE_FOV;
+    if (this.zoomT > 0.05 && this.rig.state !== 'HAND') {
+      this.lookMatrix.lookAt(this.camera.position, this.rig.kite.pos, this.up);
+      this.lookQuat.setFromRotationMatrix(this.lookMatrix);
+      this.camera.quaternion.slerp(this.lookQuat, (1 - Math.exp(-frameDt * 6)) * this.zoomT);
+    }
+  }
+
   private render(alpha: number, frameDt: number, now: number): void {
     if (!this.map || this.loadingMap) return;
     this.handleUiKeys();
     this.player.applyToCamera(this.camera, alpha);
+    this.updateZoom(frameDt);
     this.focus.copy(this.camera.position);
     this.camera.updateMatrixWorld();
 
@@ -232,7 +341,29 @@ export class Game {
 
     this.hands.setLighting(this.sky.lighting, this.camera.quaternion);
     this.hands.setEnvironment(this.scene.environment, this.scene.environmentIntensity);
-    this.hands.update(frameDt, this.handsInput, this.player.speed, 0);
+    this.hands.update(frameDt, this.handsInput, this.player.speed, this.zoomT);
+    // Ponto exato onde a linha sai da mao, alinhado na tela com o viewmodel.
+    this.hands.pinchWorld(this.camera, this.anchor);
+
+    const rig = this.rig;
+    const flying = rig.state !== 'HAND';
+    this.kiteView?.setVisible(flying);
+    if (flying) this.kiteView?.update(rig.kite, now);
+    this.lineView?.update(rig.line, this.camera.position, rig.connected ? this.anchor : undefined);
+    this.handLineView?.update(rig.handLine, this.camera.position, this.anchor);
+
+    const dir = this.wind.direction;
+    this.hud.show(this.input.enabled || this.autostart);
+    this.hud.update({
+      windSpeed: this.wind.meanSpeed,
+      windDirX: dir.x,
+      windDirZ: dir.z,
+      cameraYaw: this.currentYaw(),
+      lineOutYards: (rig.supply.capacity - rig.supply.remaining) / 0.9144,
+      lineTotalYards: rig.supply.capacityYards,
+      state: rig.state,
+      connected: rig.connected,
+    });
 
     this.renderer.info.reset();
     this.renderer.clear();
@@ -241,20 +372,24 @@ export class Game {
     this.stats.update(
       frameDt,
       this.renderer,
-      `mapa ${this.mapId}  céu ${this.skyId}\nlinha ${this.supply.remainingYards.toFixed(0)}/${this.supply.capacityYards.toFixed(0)} jd`,
+      `mapa ${this.mapId}  céu ${this.skyId}  pipa ${rig.state}\n` +
+        `altitude ${rig.kite.pos.y.toFixed(1)} m  tração ${rig.tension.toFixed(1)} N  L ${rig.activeLength.toFixed(1)} m`,
     );
   }
 
   dispose(): void {
     this.loop.stop();
+    this.disposeRig();
     this.input.dispose();
     this.controls.dispose();
     this.hands.dispose();
     this.sky.dispose();
     this.map?.dispose();
     this.menu.dispose();
+    this.hud.dispose();
     this.stats.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
 }
+

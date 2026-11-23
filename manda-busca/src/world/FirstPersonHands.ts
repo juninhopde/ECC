@@ -386,6 +386,11 @@ export class FirstPersonHands {
     this.tapT = 1;
   }
 
+  /** Mostra ou esconde o trecho de linha do viewmodel que sobe ao ceu (a linha fisica o substitui). */
+  setSkyLineVisible(visible: boolean): void {
+    this.skyLine.visible = visible;
+  }
+
   /** Fator de ocultacao [0, 1] (zoom otico: as maos descem para fora da tela). */
   setHidden(amount: number): void {
     this.hide = clamp(amount, 0, 1);

@@ -114,12 +114,12 @@ export function grassTextures(size = 1024): PbrTextureSet {
     const base = n.fbm(u, v, 4, 5);
     const fine = n.fbm(u, v, 64, 3);
     const patch = n.fbm(u, v, 3, 3);
-    mix3(o, [48, 86, 30], [108, 146, 54], base);
+    mix3(o, [64, 102, 38], [98, 136, 52], base);
     const dry = smoothstep(0.6, 0.8, patch);
     o.r = lerp(o.r, 140, dry * 0.35);
     o.g = lerp(o.g, 128, dry * 0.3);
     o.b = lerp(o.b, 70, dry * 0.25);
-    scale(o, 0.72 + 0.55 * fine);
+    scale(o, 0.8 + 0.4 * fine);
     o.rough = 0.9 + 0.1 * fine;
     o.bump = fine * 0.7 + base * 0.3;
   });
@@ -225,7 +225,7 @@ export function sandTextures(size = 1024): PbrTextureSet {
     const ripple = Math.sin((v + 0.09 * warp) * Math.PI * 2 * 18) * 0.5 + 0.5;
     const grain = n.value(u, v, 280);
     const body = n.fbm(u, v, 4, 4);
-    mix3(o, [178, 140, 88], [208, 170, 112], body);
+    mix3(o, [204, 168, 108], [232, 198, 140], body);
     scale(o, 0.9 + ripple * 0.1 + (grain - 0.5) * 0.14);
     o.rough = 0.98;
     o.bump = clamp(0.4 + ripple * 0.35 + (grain - 0.5) * 0.2, 0, 1);
@@ -483,4 +483,92 @@ export function cachedTextures(key: string, factory: () => PbrTextureSet): PbrTe
     setCache.set(key, set);
   }
   return set;
+}
+
+/** Contorno normalizado da folha (x, y em [-0.5, 0.5]); y positivo e o nariz. */
+export type KiteOutline = ReadonlyArray<readonly [number, number]>;
+
+/**
+ * Papel de seda da pipa: paineis em duas cores recortados pelo contorno (o alfa do
+ * mapa define a forma) e mascara das varetas (espinha e arco), usada para a sombra
+ * interna quando o sol atravessa o papel.
+ */
+export function silkPaperTextures(
+  outline: KiteOutline,
+  c1: string,
+  c2: string,
+  bowY: number,
+): { map: CanvasTexture; sparMap: CanvasTexture } {
+  const S = 512;
+  const rand = mulberry32(21);
+  const px = (x: number): number => (x + 0.5) * S;
+  const py = (y: number): number => (0.5 - y) * S;
+
+  const map = makeCanvas(S, S);
+  const m = map.getContext('2d')!;
+  m.clearRect(0, 0, S, S);
+  m.save();
+  m.beginPath();
+  outline.forEach(([x, y], i) => (i === 0 ? m.moveTo(px(x), py(y)) : m.lineTo(px(x), py(y))));
+  m.closePath();
+  m.clip();
+  // Quatro paineis separados pela espinha (x = 0) e pelo arco (y = bowY).
+  const split = py(bowY);
+  const mid = px(0);
+  m.fillStyle = c1;
+  m.fillRect(0, 0, mid, split);
+  m.fillRect(mid, split, S - mid, S - split);
+  m.fillStyle = c2;
+  m.fillRect(mid, 0, S - mid, split);
+  m.fillRect(0, split, mid, S - split);
+  // Fibras e amassados do papel.
+  for (let i = 0; i < 1800; i++) {
+    const x = rand() * S;
+    const y = rand() * S;
+    const len = 6 + rand() * 24;
+    const a = rand() * Math.PI;
+    m.strokeStyle = `rgba(255,255,255,${0.04 + rand() * 0.08})`;
+    m.lineWidth = 1;
+    m.beginPath();
+    m.moveTo(x, y);
+    m.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    m.stroke();
+  }
+  for (let i = 0; i < 26; i++) {
+    const x = rand() * S;
+    const y = rand() * S;
+    m.strokeStyle = `rgba(0,0,0,${0.03 + rand() * 0.05})`;
+    m.lineWidth = 1 + rand() * 2;
+    m.beginPath();
+    m.moveTo(x, y);
+    m.quadraticCurveTo(x + (rand() - 0.5) * 80, y + (rand() - 0.5) * 80, x + (rand() - 0.5) * 140, y + (rand() - 0.5) * 140);
+    m.stroke();
+  }
+  // Fita de cola ao longo das varetas.
+  m.fillStyle = 'rgba(255,255,255,0.18)';
+  m.fillRect(mid - 3, 0, 6, S);
+  m.restore();
+
+  const spar = makeCanvas(S, S);
+  const s = spar.getContext('2d')!;
+  s.fillStyle = '#000';
+  s.fillRect(0, 0, S, S);
+  try {
+    s.filter = 'blur(2.5px)';
+  } catch {
+    /* navegadores sem filtro de canvas: a vareta fica sem desfoque */
+  }
+  s.strokeStyle = '#fff';
+  s.lineCap = 'round';
+  s.lineWidth = 11;
+  s.beginPath();
+  s.moveTo(mid, py(outline[0]![1]));
+  s.lineTo(mid, py(-0.5));
+  s.stroke();
+  s.lineWidth = 9;
+  s.beginPath();
+  s.moveTo(px(-0.5), split + 6);
+  s.quadraticCurveTo(mid, split - 22, px(0.5), split + 6);
+  s.stroke();
+  return { map: prepare(map, true, false), sparMap: prepare(spar, false, false) };
 }

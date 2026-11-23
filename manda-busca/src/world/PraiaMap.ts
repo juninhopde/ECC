@@ -171,9 +171,9 @@ function buildWater(heightAt: (x: number, z: number) => number): { mesh: Mesh; u
          diffuseColor.rgb = wc;
          diffuseColor.a = mix(0.42, 0.95, smoothstep(0.0, 1.5, vDepth));
          float swash = 0.14 * sin(uTime * 1.1 + vWaterXZ.x * 0.35);
-         float foamBand = 1.0 - smoothstep(0.0, 0.42, vDepth + swash);
+         float foamBand = 1.0 - smoothstep(0.0, 0.3, vDepth + swash);
          float foamTex = vnoise(vWaterXZ * 1.4 + uTime * 0.3) * 0.6 + vnoise(vWaterXZ * 4.5 - uTime * 0.5) * 0.4;
-         float foam = foamBand * smoothstep(0.32, 0.78, foamTex);
+         float foam = foamBand * smoothstep(0.5, 0.82, foamTex);
          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96), foam);
          diffuseColor.a = max(diffuseColor.a, foam);`,
       )

@@ -99,7 +99,7 @@ const PRESETS: Record<SkyPresetId, PresetState> = {
     {
       sunElevation: 45, sunAzimuth: 135, turbidity: 2.4, rayleigh: 1.35, mieCoefficient: 0.004, mieDirectionalG: 0.78,
       cloudCoverage: 0.38, cloudDensity: 0.42, lightElevation: 45, lightAzimuth: 135, lightIntensity: 2.3,
-      hemiIntensity: 0.18, envIntensity: 0.42, fogDensity: 0.00055, night: 0,
+      hemiIntensity: 0.18, envIntensity: 0.6, fogDensity: 0.00055, night: 0,
     },
     0xfff3e0, 0xa6ccff, 0x6a5a48, 0xbcd7f5,
   ),
@@ -108,7 +108,7 @@ const PRESETS: Record<SkyPresetId, PresetState> = {
     {
       sunElevation: 12, sunAzimuth: 250, turbidity: 7, rayleigh: 2.4, mieCoefficient: 0.012, mieDirectionalG: 0.86,
       cloudCoverage: 0.5, cloudDensity: 0.5, lightElevation: 12, lightAzimuth: 250, lightIntensity: 2.2,
-      hemiIntensity: 0.16, envIntensity: 0.5, fogDensity: 0.0016, night: 0,
+      hemiIntensity: 0.16, envIntensity: 0.8, fogDensity: 0.0016, night: 0,
     },
     0xffa85a, 0xffc093, 0x4a382d, 0xf0b384,
   ),
@@ -117,7 +117,7 @@ const PRESETS: Record<SkyPresetId, PresetState> = {
     {
       sunElevation: -25, sunAzimuth: 250, turbidity: 0.6, rayleigh: 0.25, mieCoefficient: 0.002, mieDirectionalG: 0.7,
       cloudCoverage: 0.3, cloudDensity: 0.3, lightElevation: 38, lightAzimuth: 200, lightIntensity: 0.55,
-      hemiIntensity: 0.25, envIntensity: 0.35, fogDensity: 0.0011, night: 1,
+      hemiIntensity: 0.25, envIntensity: 0.4, fogDensity: 0.0011, night: 1,
     },
     0x9db8ff, 0x1b2a52, 0x080b12, 0x0a1226,
   ),
@@ -354,6 +354,10 @@ export class SkyAtmosphere {
       dst[key]!.value = src[key]!.value;
     }
     dst.showSunDisc.value = 0;
+    // O ambiente representa so a luz do ceu: o halo do sol (espalhamento Mie para frente) ja e
+    // a luz direcional do sol, e contar os dois superexporia tudo que olha para o sol.
+    dst.mieCoefficient.value = (src.mieCoefficient.value as number) * 0.2;
+    dst.mieDirectionalG.value = Math.min(src.mieDirectionalG.value as number, 0.55);
     (dst.sunPosition.value as Vector3).copy(src.sunPosition.value as Vector3);
     const next = this.pmrem.fromScene(this.envScene, 0, 1, 3000);
     this.envTarget?.dispose();

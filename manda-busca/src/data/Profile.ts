@@ -61,7 +61,7 @@ const DAILY: ReadonlyArray<Omit<Mission, 'progress' | 'claimed' | 'scope'>> = [
 const WEEKLY: ReadonlyArray<Omit<Mission, 'progress' | 'claimed' | 'scope'>> = [
   { id: 'w-cortes', title: 'Corte 20 pipas', stat: 'cuts', goal: 20, reward: 500 },
   { id: 'w-apara', title: 'Apare 5 pipas avoadas', stat: 'aparas', goal: 5, reward: 400 },
-  { id: 'w-duelos', title: 'Venca 3 duelos', stat: 'duelWins', goal: 3, reward: 450 },
+  { id: 'w-duelos', title: 'Vença 3 duelos', stat: 'duelWins', goal: 3, reward: 450 },
 ];
 
 export function dayKey(d: Date): string {

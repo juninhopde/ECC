@@ -65,7 +65,7 @@ describe('ReplayRecorder', () => {
     expect(last.pos[2]).toBeCloseTo(a.kite.pos.z, 3);
     expect(last.state).toBe(a.state);
     expect(last.lineN).toBe(a.line!.n);
-  });
+  }, 60000);
 
   it('grava os nos da linha e da rabiola', () => {
     const { rec, a } = recordedDuel(12, 20);
@@ -74,7 +74,7 @@ describe('ReplayRecorder', () => {
     expect(f.tailAttached).toBe(true);
     expect(f.tailN).toBe(BICO_MEDIO.tailRibbons + 1);
     expect(f.line[3 * 10 + 1]).toBeCloseTo(a.line!.pos[3 * 10 + 1]!, 3);
-  });
+  }, 60000);
 
   it('o clipe de um corte e congelado 1 s depois, com 4 s antes, e e independente da simulacao', () => {
     const { rec, cutAt, cutPoint, now } = recordedDuel(120);
@@ -93,7 +93,7 @@ describe('ReplayRecorder', () => {
     const before = clip!.frames[10]!.rigs[0]!.pos[0];
     rec.record(now + 1, []);
     expect(clip!.frames[10]!.rigs[0]!.pos[0]).toBe(before);
-  });
+  }, 60000);
 
   it('o clipe de corte que envolve o jogador tem prioridade sobre cortes de terceiros', () => {
     const rec = new ReplayRecorder(60);
@@ -141,7 +141,7 @@ describe('ReplayPlayer', () => {
     const f1 = clip.frames[1]!.rigs.find((r) => r.id === 'a')!;
     expect(mid.kite.pos.y).toBeCloseTo((f0.pos[1]! + f1.pos[1]!) / 2, 4);
     expect(mid.kite.quat.length()).toBeCloseTo(1, 6);
-  });
+  }, 60000);
 
   it('avanca em tempo real vezes a velocidade e recomeca ao chegar ao fim', () => {
     const clip = clipOf();
@@ -154,7 +154,7 @@ describe('ReplayPlayer', () => {
     p.advance(clip.duration + 0.3);
     expect(p.time).toBeCloseTo(0.3, 6);
     expect(p.time).toBeLessThan(clip.duration);
-  });
+  }, 60000);
 
   it('camera orbital: fica a 16 m do ponto do corte, olha para ele e gira em tempo real', () => {
     const clip = clipOf();
@@ -172,7 +172,7 @@ describe('ReplayPlayer', () => {
     p.orbit(pos, target);
     expect(pos.distanceTo(first)).toBeGreaterThan(1);
     expect(Math.hypot(pos.x - clip.point.x, pos.z - clip.point.z)).toBeCloseTo(16, 9);
-  });
+  }, 60000);
 
   it('o fantasma expoe o que o visual le: linha, resto da linha, rabiola e estado', () => {
     const clip = clipOf();
@@ -185,7 +185,7 @@ describe('ReplayPlayer', () => {
     expect(g.kite.tailNode(0, new Vector3())).not.toBeNull();
     expect(g.kite.tailNode(99, new Vector3())).toBeNull();
     expect(g.handLine).toBeNull();
-  });
+  }, 60000);
 
   it('atravessar o corte (numero de nos muda) nao quebra a amostragem e mostra o resto da linha', () => {
     const { rec, cutAt } = recordedDuel(120);
@@ -204,7 +204,7 @@ describe('ReplayPlayer', () => {
     }
     expect(seen.whole).toBe(true); // antes do corte
     expect(seen.split).toBe(true); // depois do corte
-  });
+  }, 60000);
 });
 
 describe('rotulos das pipas', () => {

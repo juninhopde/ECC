@@ -47,7 +47,7 @@ const FISH: KiteOutline = [[0, 0.5], [0.34, 0.1], [0.18, -0.5], [-0.18, -0.5], [
 export const KITE_MODELS: KiteModel[] = [
   {
     id: 'bico-pequeno', label: 'Bico Pequeno', price: 150, outline: DIAMOND, bowY: 0.12,
-    description: 'Muito leve: sobe rapido em vento fraco e o tapa e muito agil, mas e instavel nas rajadas.',
+    description: 'Muito leve: sobe rápido em vento fraco e o tapa é muito ágil, mas é instável nas rajadas.',
     spec: spec('bico-pequeno', 'Bico Pequeno', {
       width: 0.42, height: 0.46, area: 0.15, mass: 0.022, trimAlpha: 0.66, pitchStiffness: 0.55, yawStiffness: 0.5,
       inPlaneStability: 0.12, tailRibbons: 12, tailLength: 1.2, tailRibbonArea: 0.0013, tailRibbonMass: 0.0006, dartImpulse: 5.2,
@@ -60,7 +60,7 @@ export const KITE_MODELS: KiteModel[] = [
   },
   {
     id: 'carioquinha', label: 'Carioquinha', price: 250, outline: SQUARE_ISH, bowY: 0.18,
-    description: 'A cortada classica carioca: resposta rapida na desbicada e excelente no tenteio.',
+    description: 'A cortada clássica carioca: resposta rápida na desbicada e excelente no tenteio.',
     spec: spec('carioquinha', 'Carioquinha', {
       width: 0.5, height: 0.52, area: 0.19, mass: 0.03, trimAlpha: 0.6, pitchStiffness: 0.6, yawStiffness: 0.85,
       inPlaneStability: 0.17, tailRibbons: 14, tailLength: 1.5, dartImpulse: 5.8,
@@ -68,7 +68,7 @@ export const KITE_MODELS: KiteModel[] = [
   },
   {
     id: 'carioca-grande', label: 'Carioca Grande (Pipão)', price: 600, outline: DIAMOND, bowY: 0.12,
-    description: 'Grande area de arrasto: puxa forte no vento e exige carretilha com boa tracao. Presenca imponente.',
+    description: 'Grande área de arrasto: puxa forte no vento e exige carretilha com boa tração. Presença imponente.',
     spec: spec('carioca-grande', 'Carioca Grande', {
       width: 0.74, height: 0.8, area: 0.46, mass: 0.075, cnMax: 1.25, trimAlpha: 0.56, pitchStiffness: 0.75, yawStiffness: 1.1,
       inPlaneStability: 0.2, tailRibbons: 20, tailLength: 2.4, tailRibbonArea: 0.0022, tailRibbonMass: 0.001, dartImpulse: 3.0,
@@ -76,7 +76,7 @@ export const KITE_MODELS: KiteModel[] = [
   },
   {
     id: 'paulista', label: 'Paulista', price: 350, outline: WIDE, bowY: 0.1,
-    description: 'Formato tradicional largo: estabilidade alta la no alto e tapa cadenciado.',
+    description: 'Formato tradicional largo: estabilidade alta lá no alto e tapa cadenciado.',
     spec: spec('paulista', 'Paulista', {
       width: 0.62, height: 0.64, area: 0.3, mass: 0.045, trimAlpha: 0.6, pitchStiffness: 0.7, yawStiffness: 1.5,
       inPlaneStability: 0.24, tailRibbons: 16, tailLength: 1.8, dartImpulse: 3.6,
@@ -84,7 +84,7 @@ export const KITE_MODELS: KiteModel[] = [
   },
   {
     id: 'raia', label: 'Raia', price: 400, outline: RHOMBUS, bowY: 0,
-    description: 'Losango sem rabiola: velocidade extrema nas desbicadas. Nao da tapa.',
+    description: 'Losango sem rabiola: velocidade extrema nas desbicadas. Não dá tapa.',
     spec: spec('raia', 'Raia', {
       width: 0.5, height: 0.56, area: 0.2, mass: 0.02, hasTail: false, trimAlpha: 0.72, pitchStiffness: 0.8, yawStiffness: 1.0,
       inPlaneStability: 0.4, dartImpulse: 6.5, canTapa: false,
@@ -92,7 +92,7 @@ export const KITE_MODELS: KiteModel[] = [
   },
   {
     id: 'peixinho', label: 'Peixinho', price: 400, outline: FISH, bowY: 0.1,
-    description: 'Compacta e sem rabiola: aceleracao instantanea e curvas fechadas. Nao da tapa.',
+    description: 'Compacta e sem rabiola: aceleração instantânea e curvas fechadas. Não dá tapa.',
     spec: spec('peixinho', 'Peixinho', {
       width: 0.34, height: 0.5, area: 0.12, mass: 0.018, hasTail: false, trimAlpha: 0.7, pitchStiffness: 0.8, yawStiffness: 0.9,
       inPlaneStability: 0.45, dartImpulse: 7.0, canTapa: false,
@@ -114,15 +114,15 @@ export interface ReelModel {
 export const REEL_MODELS: ReelModel[] = [
   {
     id: 'madeira', label: 'Carretilha de Madeira', price: 0, capacityYards: 250,
-    description: '250 jardas, puxada media.', rates: { reel: 4, payOut: 6, quick: 14 },
+    description: '250 jardas, puxada média.', rates: { reel: 4, payOut: 6, quick: 14 },
   },
   {
     id: 'aluminio', label: 'Carretilha de Alumínio Rolamentada', price: 800, capacityYards: 350,
-    description: '350 jardas, puxada e recolhimento rapidos.', rates: { reel: 6, payOut: 6.5, quick: 18 },
+    description: '350 jardas, puxada e recolhimento rápidos.', rates: { reel: 6, payOut: 6.5, quick: 18 },
   },
   {
     id: 'lata', label: 'Lata de Achocolatado', price: 300, capacityYards: 200,
-    description: '200 jardas, solta rapido; o recolhimento manual e mais lento.', rates: { reel: 2.5, payOut: 9, quick: 11 },
+    description: '200 jardas, solta rápido; o recolhimento manual é mais lento.', rates: { reel: 2.5, payOut: 9, quick: 11 },
   },
 ];
 
@@ -139,7 +139,7 @@ export const LINE_MODELS: LineModel[] = LINE_ORDER.map((id) => ({
   id,
   label: LINE_SPECS[id].label,
   price: id === 'linha10' ? 0 : id === 'cerol' ? 300 : 700,
-  description: `Abrasividade ${LINE_SPECS[id].abrasion.toFixed(2)}x, resistencia ${LINE_SPECS[id].resistance.toFixed(2)}x.`,
+  description: `Abrasividade ${LINE_SPECS[id].abrasion.toFixed(2)}x, resistência ${LINE_SPECS[id].resistance.toFixed(2)}x.`,
 }));
 
 export type SkinId = 'padrao' | 'samurai' | 'halloween' | 'dourada';

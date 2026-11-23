@@ -12,7 +12,7 @@ import { LINE_SPECS, type LineSpec } from './LineSpec';
 import { VerletLine } from './VerletLine';
 import type { WindFn } from './WindField';
 
-export type KiteState = 'HAND' | 'FLYING' | 'GROUNDED' | 'AVOADA';
+export type KiteState = 'HAND' | 'FLYING' | 'GROUNDED' | 'AVOADA' | 'CAPTURED';
 
 export interface PilotInput {
   /** Borda: soltar a pipa que esta na mao (tecla N ou clique esquerdo). */
@@ -76,6 +76,13 @@ export class KiteRig {
   readonly events: RigEvents = {};
   /** Auxilio de subida ativo logo apos soltar a pipa. */
   assisting = false;
+  /** Desgaste por atrito (combate): ao chegar na resistencia da linha, ela rompe. */
+  wear = 0;
+  /** Velocidades de linha medidas no ultimo passo (m/s): recolhida e liberada. */
+  pullSpeed = 0;
+  payOutSpeed = 0;
+  /** Quantas pipas avoadas o piloto ja apanhou (apara). */
+  capturedKites = 0;
 
   private readonly anchor = new Vector3();
   private readonly anchorPrev = new Vector3();
@@ -92,6 +99,8 @@ export class KiteRig {
   private tapaPsi = 0;
   private grounded = 0;
   private slackRatio = 0;
+  private tickPay = 0;
+  private tickPull = 0;
 
   constructor(id: string, supply: LineSupply, spec: KiteSpec = BICO_MEDIO, lineSpec: LineSpec = LINE_SPECS.linha10) {
     this.id = id;
@@ -159,22 +168,83 @@ export class KiteRig {
     this.events.onLaunch?.();
   }
 
-  /** Um passo fixo (1/60 s). `anchor` e o ponto onde a linha sai da mao. */
-  update(dt: number, input: PilotInput, anchor: Vector3, env: RigEnvironment): void {
+  /** Poder de corte no relo: velocidade da linha (recolhida + liberada) vezes a abrasividade. */
+  get cutPower(): number {
+    return (this.pullSpeed + this.payOutSpeed) * this.lineSpec.abrasion;
+  }
+
+  /**
+   * Inicio de um passo fixo: ancora, lancamento e comandos. Devolve true se os sub-passos
+   * de simulacao devem rodar (a pipa nao esta na mao nem capturada).
+   */
+  beginTick(dt: number, input: PilotInput, anchor: Vector3, env: RigEnvironment): boolean {
     this.anchorPrev.copy(this.anchorReady ? this.anchor : anchor);
     this.anchor.copy(anchor);
     this.anchorReady = true;
-
+    this.tickPay = 0;
+    this.tickPull = 0;
+    if (this.state === 'CAPTURED') return false;
     if (this.state === 'HAND') {
       if (input.launch) this.launch(env);
       this.updateHandLine(dt, input, env);
-      return;
+      return false;
     }
-
     this.runControls(dt, input);
-    this.simulate(dt, env);
+    return true;
+  }
+
+  /** Um sub-passo (1..SUBSTEPS) de duracao `dtS`. */
+  subStep(s: number, dtS: number, env: RigEnvironment): void {
+    const line = this.line;
+    const knot = this.tmp;
+    const time = env.time + (s - 1) * dtS;
+    const f = line && (this.connected || this.state === 'AVOADA') ? this.lineForce : null;
+    this.kite.step(dtS, env.wind, time, f);
+    this.collideKite(env);
+    if (!line) return;
+    this.kite.knotWorld(knot);
+    line.endAnchor.copy(knot);
+    if (this.connected) {
+      line.startAnchor.copy(this.anchorPrev).lerp(this.anchor, s / SUBSTEPS);
+    }
+    line.step(dtS, { wind: env.wind, time, groundHeight: env.groundHeight, wires: env.wires });
+    this.couple(line);
+    if (line.pendingBreak) this.breakLine(line.pendingBreak.node, line.pendingBreak.cause);
+  }
+
+  /** Fim do passo fixo: folga, linha do lado da mao, recolher e velocidades de atrito. */
+  endTick(dt: number, input: PilotInput, env: RigEnvironment): void {
+    const line = this.line;
+    if (line && this.connected && this.state !== 'CAPTURED') {
+      const chord = line.chordLength();
+      this.slackRatio = Math.max(0, 1 - chord / Math.max(line.activeLength, 0.1));
+    }
+    this.pullSpeed = this.tickPull / dt;
+    this.payOutSpeed = this.tickPay / dt;
+    if (this.state === 'HAND' || this.state === 'CAPTURED') return;
     this.updateHandLine(dt, input, env);
     this.checkCaught();
+  }
+
+  /** Um passo fixo (1/60 s) completo, para uso com um unico piloto e para os testes. */
+  update(dt: number, input: PilotInput, anchor: Vector3, env: RigEnvironment): void {
+    const simulate = this.beginTick(dt, input, anchor, env);
+    if (simulate) {
+      const dtS = dt / SUBSTEPS;
+      for (let s = 1; s <= SUBSTEPS; s++) this.subStep(s, dtS, env);
+    }
+    this.endTick(dt, input, env);
+  }
+
+  /** Pernas do estirante em coordenadas de mundo (cada perna vai da espinha ao no central). */
+  bridleLegs(out: Array<[Vector3, Vector3]>): number {
+    const n = this.spec.anchors.length;
+    while (out.length < n) out.push([new Vector3(), new Vector3()]);
+    for (let i = 0; i < n; i++) {
+      this.kite.anchorWorld(i, out[i]![0]);
+      this.kite.knotWorld(out[i]![1]);
+    }
+    return n;
   }
 
   private runControls(dt: number, input: PilotInput): void {
@@ -238,6 +308,7 @@ export class KiteRig {
     if (delta > 0) {
       const moved = this.supply.payOut(delta);
       if (moved > 0) line.activeLength = line.activeLength + moved;
+      this.tickPay += moved;
     } else if (delta < 0) {
       // Embreagem deslizante: o piloto nao recolhe alem do que a linha suporta. A taxa cai a
       // zero conforme a tracao se aproxima de 75% da ruptura (evita deformacao e tracao absurdas).
@@ -252,36 +323,8 @@ export class KiteRig {
       if (want > 0) {
         const stored = this.supply.takeIn(want);
         line.activeLength = line.activeLength - stored;
+        this.tickPull += stored;
       }
-    }
-  }
-
-  private simulate(dt: number, env: RigEnvironment): void {
-    const dtS = dt / SUBSTEPS;
-    const line = this.line;
-    const knot = this.tmp;
-    for (let s = 1; s <= SUBSTEPS; s++) {
-      const time = env.time + (s - 1) * dtS;
-      const f = line && (this.connected || this.state === 'AVOADA') ? this.lineForce : null;
-      this.kite.step(dtS, env.wind, time, f);
-      this.collideKite(env);
-      if (line) {
-        this.kite.knotWorld(knot);
-        line.endAnchor.copy(knot);
-        if (this.connected) {
-          line.startAnchor.copy(this.anchorPrev).lerp(this.anchor, s / SUBSTEPS);
-        }
-        line.step(dtS, { wind: env.wind, time, groundHeight: env.groundHeight, wires: env.wires });
-        this.couple(line);
-        if (line.pendingBreak) {
-          this.breakLine(line.pendingBreak.node, line.pendingBreak.cause);
-          break;
-        }
-      }
-    }
-    if (line && this.connected) {
-      const chord = line.chordLength();
-      this.slackRatio = Math.max(0, 1 - chord / Math.max(line.activeLength, 0.1));
     }
   }
 

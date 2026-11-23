@@ -127,6 +127,18 @@ describe('VerletLine', () => {
     expect(right.restLen).toBeCloseTo(l.restLen, 12);
   });
 
+  it('corte rente ao estirante deixa ao menos um segmento do lado da pipa e a fisica segue finita', () => {
+    const l = new VerletLine(LINE_SPECS.linha10, LINE_NODES, 60);
+    l.layout(new Vector3(0, 2, 0), new Vector3(40, 22, 0));
+    const right = l.splitAt(LINE_NODES - 2); // o corte do estirante pede o ultimo no interior
+    expect(right.n).toBeGreaterThanOrEqual(2);
+    expect(right.activeLength).toBeGreaterThan(0.5);
+    expect(l.n + right.n).toBe(LINE_NODES);
+    right.endAnchor.set(40, 22, 0);
+    for (let i = 0; i < 480; i++) right.step(DT, { wind: noWind, time: i * DT });
+    for (const v of right.pos) expect(Number.isFinite(v)).toBe(true);
+  });
+
   it('engata em cabo de poste e rompe quando puxada com forca', () => {
     const wire: WireSegment = { a: new Vector3(15, 8, -6), b: new Vector3(15, 8, 6), radius: 0.015 };
     const l = new VerletLine(LINE_SPECS.linha10, LINE_NODES, 30);

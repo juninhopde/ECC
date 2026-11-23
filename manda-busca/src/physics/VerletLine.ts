@@ -446,7 +446,9 @@ export class VerletLine {
    * parte restante (k+1..fim) e devolvida como nova linha com a ponta solta.
    */
   splitAt(k: number): VerletLine {
-    const cut = Math.min(Math.max(k, 1), this.n - 2);
+    // O lado da pipa precisa ficar com pelo menos 2 nos (um segmento): com 1 so, o comprimento
+    // ativo seria 0 e a fisica dividiria por zero (corte rente ao estirante).
+    const cut = Math.min(Math.max(k, 1), Math.max(1, this.n - 3));
     const rightCount = this.n - 1 - cut;
     const right = new VerletLine(this.spec, rightCount, this.restLen * (rightCount - 1));
     right.restLen = this.restLen;

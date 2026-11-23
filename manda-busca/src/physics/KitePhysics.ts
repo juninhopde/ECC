@@ -244,6 +244,16 @@ export class KiteBody {
     this.tail?.reset();
   }
 
+  /**
+   * Inclina o nariz para o lado do jogador ate o angulo de ataque da regulagem (alpha = 90 - theta).
+   * Quem solta a pipa ja a entrega inclinada; sem isto as pesadas estolam antes do trim girar a folha.
+   */
+  pitchToTrim(): void {
+    const theta = Math.PI / 2 - this.spec.trimAlpha;
+    this.quat.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), theta));
+    this.tail?.reset();
+  }
+
   knotWorld(out: Vector3): Vector3 {
     const k = this.spec.knot;
     return out.set(k[0], k[1], k[2]).applyQuaternion(this.quat).add(this.pos);

@@ -53,10 +53,19 @@ export const SUBSTEPS = 4;
 export const PAY_OUT_RATE = 6;
 export const REEL_RATE = 4;
 export const QUICK_PULL_RATE = 14;
+
+/** Velocidades de linha do carretel (m/s): recolher continuo, dar linha e puxada rapida. */
+export interface ReelRates {
+  reel: number;
+  payOut: number;
+  quick: number;
+}
+
+export const DEFAULT_RATES: ReelRates = { reel: REEL_RATE, payOut: PAY_OUT_RATE, quick: QUICK_PULL_RATE };
 const MIN_ACTIVE = 2;
 const LAUNCH_LENGTH = 4;
 const TAPA_ANGLE = (35 * Math.PI) / 180;
-const QE_ANGLE = (60 * Math.PI) / 180;
+export const QE_ANGLE = (60 * Math.PI) / 180;
 const ASSIST_ALTITUDE = 24;
 const ASSIST_DARTS = [0.35, 1.0, 1.65];
 
@@ -85,6 +94,10 @@ export class KiteRig {
   reelRequest = 0;
   /** Quantas pipas avoadas o piloto ja apanhou (apara). */
   capturedKites = 0;
+  /** Equipe (-1 = todos contra todos). Pipas da mesma equipe nao se cortam. */
+  team = -1;
+  /** Velocidades do carretel equipado. */
+  rates: ReelRates = DEFAULT_RATES;
 
   protected readonly anchor = new Vector3();
   private readonly anchorPrev = new Vector3();
@@ -137,12 +150,31 @@ export class KiteRig {
     return this.kite.pos.distanceTo(point);
   }
 
-  /** Troca o material (fase 4). Valido apenas com a pipa na mao. */
-  setEquipment(spec: KiteSpec, lineSpec: LineSpec): void {
+  /** Troca o equipamento (pipa, linha e carretel). So vale com a pipa na mao. */
+  setEquipment(spec: KiteSpec, lineSpec: LineSpec, reel?: { capacityYards: number; rates: ReelRates }): void {
     if (this.state !== 'HAND') return;
     this.spec = spec;
     this.lineSpec = lineSpec;
     this.kite = new KiteBody(spec);
+    this.wear = 0;
+    if (reel) {
+      this.supply = new LineSupply(reel.capacityYards, 1);
+      this.rates = reel.rates;
+    }
+  }
+
+  /** Volta o piloto a "pipa na mao" com uma pipa nova (rodada seguinte, reposicao). */
+  resetToHand(): void {
+    this.line = null;
+    this.handLine = null;
+    this.connected = false;
+    this.state = 'HAND';
+    this.assisting = false;
+    this.wear = 0;
+    this.kite = new KiteBody(this.spec);
+    this.supply = new LineSupply(this.supply.capacityYards, 1);
+    this.slackRatio = 0;
+    this.reelBurst = 0;
   }
 
   private launch(env: RigEnvironment): void {
@@ -158,6 +190,7 @@ export class KiteRig {
     const face = this.tmp2.copy(dir).negate();
     this.kite = new KiteBody(this.spec);
     this.kite.place(start, face, new Vector3(this.windTmp.x * 0.5, 1.2, this.windTmp.z * 0.5));
+    this.kite.pitchToTrim();
     this.line = new VerletLine(this.lineSpec, 36, available);
     const knot = this.kite.knotWorld(new Vector3());
     this.line.layout(this.anchor, knot);
@@ -274,7 +307,7 @@ export class KiteRig {
     let delta = 0;
     // O piloto assumiu a linha: o auxilio de subida termina (senao ele anularia o recolhimento).
     if (input.reel || input.quickPull || input.payOut || input.desbicada) this.assisting = false;
-    this.reelRequest = (input.quickPull ? QUICK_PULL_RATE : 0) + (input.reel && !input.payOut ? REEL_RATE : 0) + (this.reelBurst > 0 ? 18 : 0);
+    this.reelRequest = (input.quickPull ? this.rates.quick : 0) + (input.reel && !input.payOut ? this.rates.reel : 0) + (this.reelBurst > 0 ? this.rates.quick * 1.3 : 0);
 
     // Auxilio de subida: 3 desbicadas automaticas iniciais e, depois, uma a cada 1,2 s ate a
     // altitude estavel; a linha so e liberada enquanto firme (tracao alta).
@@ -295,20 +328,20 @@ export class KiteRig {
       }
     }
 
-    if (input.payOut) delta += PAY_OUT_RATE * dt;
+    if (input.payOut) delta += this.rates.payOut * dt;
 
     if (input.desbicada) {
       const factor = Math.min(1, Math.max(0.3, 1 - this.slackRatio * 5));
       this.kite.dart(this.spec.dartImpulse * factor);
       this.reelBurst += 0.9;
     }
-    if (input.quickPull) delta -= QUICK_PULL_RATE * dt;
+    if (input.quickPull) delta -= this.rates.quick * dt;
     if (this.reelBurst > 0) {
-      const burst = Math.min(this.reelBurst, 18 * dt);
+      const burst = Math.min(this.reelBurst, this.rates.quick * 1.3 * dt);
       delta -= burst;
       this.reelBurst -= burst;
     }
-    if (input.reel && !input.payOut) delta -= REEL_RATE * dt;
+    if (input.reel && !input.payOut) delta -= this.rates.reel * dt;
 
     this.applyLineDelta(line, delta);
 
@@ -403,7 +436,7 @@ export class KiteRig {
     hl.startAnchor.copy(this.anchor);
     const reeling = input.reel || input.quickPull;
     if (reeling) {
-      const rate = input.quickPull ? QUICK_PULL_RATE : REEL_RATE;
+      const rate = input.quickPull ? this.rates.quick : this.rates.reel;
       const give = Math.min(rate * dt, Math.max(0, hl.activeLength - 0.4));
       if (give > 0) {
         const stored = this.supply.takeIn(give);

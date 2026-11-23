@@ -160,6 +160,11 @@ export function minLineDistance(la: VerletLine, lb: VerletLine, out: LineContact
   return out;
 }
 
+/** Pipas da mesma equipe nao se cortam (sem fogo amigo). */
+export function sameTeam(a: KiteRig, b: KiteRig): boolean {
+  return a.team >= 0 && a.team === b.team;
+}
+
 const key = (a: KiteRig, b: KiteRig): string => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
 
 /** Pipa solta: avoada no ar, ou caida no chao sem linha ligada ao piloto (ainda apanhavel). */
@@ -180,6 +185,8 @@ export class ReloSystem {
   readonly contacts = new Map<string, ReloContact>();
   readonly hooks = new Map<KiteRig, Hook>();
   readonly events: CombatEvent[] = [];
+  /** Combate ligado. Desligado na preparacao do campeonato ("ainda nao corta"). */
+  enabled = true;
   private readonly cooldown = new Map<string, number>();
   private readonly scratch: LineContact = { distSq: 0, segA: 0, sA: 0, segB: 0, sB: 0, point: new Vector3() };
   private readonly tmpA = new Vector3();
@@ -202,16 +209,20 @@ export class ReloSystem {
 
   /** Avalia um sub-passo de duracao dtS para todos os pilotos. */
   detect(rigs: readonly KiteRig[], dtS: number): void {
+    if (!this.enabled) return;
     for (const c of this.contacts.values()) c.seenThisStep = false;
     for (const h of this.hooks.values()) h.seenThisStep = false;
     const combat = rigs.filter(flyingConnected);
 
     for (let i = 0; i < combat.length; i++) {
-      for (let j = i + 1; j < combat.length; j++) this.detectRelo(combat[i]!, combat[j]!, dtS);
+      for (let j = i + 1; j < combat.length; j++) {
+        if (sameTeam(combat[i]!, combat[j]!)) continue;
+        this.detectRelo(combat[i]!, combat[j]!, dtS);
+      }
     }
     for (const enemy of combat) {
       for (const victim of rigs) {
-        if (victim === enemy) continue;
+        if (victim === enemy || sameTeam(enemy, victim)) continue;
         this.detectBridleAndTail(enemy, victim);
       }
     }
@@ -279,7 +290,7 @@ export class ReloSystem {
     const pa = cutPower(Math.max(c.a.pullSpeed, c.a.reelRequest * 0.7) + c.a.payOutSpeed, c.a.lineSpec);
     const pb = cutPower(Math.max(c.b.pullSpeed, c.b.reelRequest * 0.7) + c.b.payOutSpeed, c.b.lineSpec);
     if (Math.max(pa, pb) < MIN_POWER) return false;
-    const loser = pa < pb ? c.a : pa > pb ? c.b : c.a.lineSpec.resistance <= c.b.lineSpec.resistance ? c.a : c.b;
+    const loser = pa < pb ? c.a : pa > pb ? c.b : this.tieLoser(c);
     const winner = loser === c.a ? c.b : c.a;
     const diff = Math.max(Math.abs(pa - pb), MIN_POWER_DIFF);
     loser.wear += diff * DAMAGE_PER_POWER;
@@ -298,6 +309,17 @@ export class ReloSystem {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Empate de potencia: perde a linha de menor resistencia; com linhas iguais, alterna a cada
+   * intervalo, para que a ordem em que as pipas foram registradas nao favoreca ninguem.
+   */
+  private tieLoser(c: ReloContact): KiteRig {
+    const ra = c.a.lineSpec.resistance;
+    const rb = c.b.lineSpec.resistance;
+    if (ra !== rb) return ra < rb ? c.a : c.b;
+    return Math.floor(c.time / CONTACT_TICK) % 2 === 0 ? c.a : c.b;
   }
 
   private endContact(c: ReloContact): void {

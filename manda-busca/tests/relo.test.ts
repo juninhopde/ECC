@@ -66,6 +66,29 @@ function forceCross(a: Pilot, b: Pilot): void {
   place(b, new Vector3(30, 12, -6));
 }
 
+describe('desempate do relo', () => {
+  it('potencia igual com linhas iguais divide o desgaste entre as duas pipas (sem favorecer a ordem de registro)', () => {
+    const arena = makeArena();
+    const a = arena.add('a', -6);
+    const b = arena.add('b', 6);
+    launchBoth(arena, a, b, 8);
+    forceCross(a, b);
+    a.input.quickPull = true;
+    b.input.quickPull = true;
+    let maxA = 0;
+    let maxB = 0;
+    for (let i = 0; i < 60 * 4; i++) {
+      arena.step();
+      maxA = Math.max(maxA, a.rig.wear);
+      maxB = Math.max(maxB, b.rig.wear);
+    }
+    expect(maxA).toBeGreaterThan(0.1);
+    expect(maxB).toBeGreaterThan(0.1);
+    // Antes do ajuste, todo o desgaste caia sempre sobre a primeira pipa registrada (b ficava em 0).
+    expect(Math.abs(maxA - maxB)).toBeLessThan(0.4 * (maxA + maxB));
+  });
+});
+
 describe('constantes do corte', () => {
   it('multiplicadores de abrasividade e resistencia seguem a especificacao', () => {
     expect(LINE_SPECS.linha10.abrasion).toBe(1.0);
